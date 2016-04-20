@@ -3,7 +3,7 @@
 // Requirements:
 // - it should find bugs in reasonable time
 //   - you are restricted to 100 runs
-//   - think about restricting the value range
+//   - think about restricting the value range and about edge cases
 // - it should find three bugs that are still present in the current implementation of `abs`
 
 package main
@@ -16,7 +16,7 @@ import (
 
 // ===========================================
 func generateTestCase() int {
-	// generate a random test case
+	// generate a test case
 	// you code goes here...
 
 }
