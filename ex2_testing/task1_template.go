@@ -9,8 +9,8 @@ import "fmt"
 
 // ===========================================
 // Test template
-func testAbs(c int) bool {
-	// The test should return "true" if it succeeds
+func testAbs(testCase int) bool {
+	// The test should return "true" if `abs` works correctly
 	// and "false" if it fails
 
 	//  you code goes here...
