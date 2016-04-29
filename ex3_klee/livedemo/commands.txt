@@ -1,0 +1,69 @@
+## To install KLEE with Clang/LLVM, follow instructions at http://klee.github.io/docker/
+
+# open my prepared container
+docker start -ai klee
+
+# open the same container in new terminal
+docker exec -it "klee" bash
+
+# export library path for klee
+export LIBRARY_PATH=/home/klee/klee_build/klee/Release+Asserts/lib
+export LD_LIBRARY_PATH=/home/klee/klee_build/klee/Release+Asserts/lib
+
+
+00-sign
+===============
+
+clang -I /home/klee/klee_src/include/ -emit-llvm -c -g sign.c
+klee sign.bc
+
+ktest-tool --write-ints klee-last/test000001.ktest
+ktest-tool --write-ints klee-last/test000002.ktest
+ktest-tool --write-ints klee-last/test000003.ktest
+
+clang -I /home/klee/klee_src/include/ -L $LD_LIBRARY_PATH sign.c -lkleeRuntest
+
+KTEST_FILE=klee-last/test000001.ktest ./a.out
+KTEST_FILE=klee-last/test000002.ktest ./a.out
+KTEST_FILE=klee-last/test000003.ktest ./a.out
+
+# supposed to emit three test cases
+
+
+01-bufferoverflow   
+===============
+
+clang -emit-llvm -c -g bo.c
+klee --libc=uclibc --posix-runtime bo.bc
+
+# supposed to emit one buffer-overflow (out-of-bounds) test case
+
+
+02-lecture-example
+===============
+
+clang -I /home/klee/klee_src/include/ -emit-llvm -c -g example.c
+klee example.bc
+
+ktest-tool --write-ints klee-last/test000001.ktest
+ktest-tool --write-ints klee-last/test000002.ktest
+ktest-tool --write-ints klee-last/test000003.ktest
+
+# supposed to emit three test cases
+
+
+03-bad-calc
+===============
+
+clang -emit-llvm -c -g calc.c
+klee --libc=uclibc --posix-runtime --allow-external-sym-calls calc.bc --sym-args 1 3 1    # number of arguments from 1 to 3, each of maximum length of 1 symbol
+
+# supposed to emit three buggy test cases
+
+04-good-calc
+===============
+
+clang -emit-llvm -c -g calc.c
+klee --libc=uclibc --posix-runtime --allow-external-sym-calls calc.bc --sym-args 1 3 1    # number of arguments from 1 to 3, each of maximum length of 1 symbol
+
+# supposed to emit test cases without any bugs found
