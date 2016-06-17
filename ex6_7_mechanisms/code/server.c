@@ -6,46 +6,79 @@
 #include <sys/socket.h>
 #include <netdb.h>
 #include <arpa/inet.h>
+#include <poll.h>
 
 #include <sys/wait.h>
+#include <sys/resource.h>
 
 #if (defined(__APPLE__) && defined(__MACH__)) || defined(MAC_OS_X)
 #include <netinet/in.h>
 #endif // MAC_OS_X
 
 #define MAXPENDING 5
-#define RCVBUFSIZE 32
+#define RCVBUFSIZE 1024*1024
+#define MEMLIMIT 32*1024*1024
+
+int fd[2];  // pipe fd
 
 int backup() {
-    int restarts = 0, ret;
+    int restarts = 0, ret = 0;
 
     for (;; restarts++) {
-        // too many restarts -> trigger graceful degradation
-        if (restarts >= 3)
-            ret = -1;
-        else ret = fork();
 
-        // graceful degradation required -> parent does request handling itself
-        if ( ret < 0 ) {
-            printf("Graceful degradation .. running without backup\n");
-            return ret;
+        if (pipe(fd) < 0) {
+            fd[0] = -1;
+            fd[1] = -1;
+            printf("Error creating pipe\n");
+            ret = -1;
+        } else {
+            /* integer overflow -> trigger graceful degradation */
+            if (restarts < 0)
+                ret = -1;
+            else ret = fork();
         }
 
-        // child returns -> return from backup() and do some request handling
-        if (ret == 0) {
+        if (ret == 0) {// child returns
+            close(fd[1]);
             printf("Restart %d\n", restarts);
             printf("New echo server with PID: %d\n", (int) getpid());
             return restarts;
         }
 
-        // parent returns -> wait until child is dead
+        if ( ret < 0 ) {
+            printf("Graceful degradation .. running without backup\n");
+            return ret;
+        }
+
+        close(fd[0]);
         printf("Waiting %d for %d\n", (int) getpid(), ret);
-        while (ret != waitpid(ret,0,0)) /* noop */;
+        while (ret != waitpid(ret,0,0));
     }
     return 0;
 }
 
+/*
+ * This function returns true (as int: 1) if the pipe between both
+ * processes has been closed.
+ */
+int isPipeClosed() {
+    struct pollfd pfds;
+    int time = 0;
 
+    pfds.fd = fd[0];
+    pfds.events = POLLHUP | POLLERR | POLLIN; // POLLIN might be enough..
+    pfds.revents = 0;
+
+    if(poll(&pfds, 1, time) < 0) {
+        printf("Poll failed\n");
+    }
+    if (pfds.revents) {
+        printf("Pipe failed (%d)\n", pfds.revents);
+        close (fd[0]);
+        return 1;
+    }
+    return 0;
+}
 
 
 /*
@@ -63,7 +96,8 @@ void printErrorAndQuit(char *msg){
  * The client socket is closed if the message is sent.
  */
 void echoMessage(int clntSocket){
-    char echoBuffer[RCVBUFSIZE];
+//    char echoBuffer[RCVBUFSIZE];
+    char *echoBuffer = malloc(RCVBUFSIZE);
     int recvMsgSize;
 
     /*receive message*/
@@ -103,6 +137,13 @@ void usage(char *prog_name){
 
 int main(int argc, char *argv[])
 {
+    struct rlimit rlim;
+
+    /* set resource limits */
+    rlim.rlim_cur = MEMLIMIT;
+    rlim.rlim_max = MEMLIMIT;
+    if (0 != setrlimit (RLIMIT_AS, &rlim))
+        printErrorAndQuit ("setrlimit failed");
     int servSock;                    /* Socket descriptor for server */
     struct addrinfo hints;           /* Hints to use IP-version agnostic TCP */
     struct addrinfo *servinfo;       /* Server info */
@@ -177,6 +218,8 @@ int main(int argc, char *argv[])
 
             echoMessage(clntSock);
         }
+
+        if (ft < 0 || isPipeClosed()) { ft = backup(); }
     }
 
     /* this point is never reached */
